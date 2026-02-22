@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>لعبة مدرسة البتراء: تحدي الانتماء</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Tajawal', sans-serif;
+            background: #eecda3; /* ألوان صخور البتراء */
+            background: linear-gradient(to bottom, #ef629f, #eecda3); 
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .score-board {
+            font-size: 24px;
+            color: #fff;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+            align-self: flex-start;
+            pointer-events: auto;
+            border: 2px solid #f1c40f;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #f1c40f;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            line-height: 1.6;
+            max-width: 85%;
+        }
+
+        .btn {
+            background-color: #e67e22;
+            color: white;
+            padding: 15px 40px;
+            font-size: 18px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: 'Tajawal', sans-serif;
+            transition: all 0.3s;
+            pointer-events: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            font-weight: bold;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-share {
+            background-color: #3b5998;
+            margin-top: 10px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* تحسين مظهر الأزرار للموبايل */
+        @media (max-width: 600px) {
+            h1 { font-size: 24px; }
+            p { font-size: 16px; }
+            .btn { padding: 12px 30px; font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="start-screen">
+        <h1>مدرسة البتراء الأساسية للبنات</h1>
+        <p>مبادرة "انتمي"<br>ساعدينا في الحفاظ على جمال مدرستنا.<br>حركي الفتاة لالتقاط النفايات وإصلاح الأعطال.</p>
+        <button class="btn" onclick="startGame()">ابدأ التحدي الآن</button>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1>انتهى الوقت!</h1>
+        <p>نقاط الانتماء التي جمعتِها: <br><span id="final-score" style="font-size: 40px; color: #f1c40f;">0</span></p>
+        <p id="feedback-text"></p>
+        <button class="btn" onclick="startGame()">حاولي مرة أخرى</button>
+        <button class="btn btn-share" onclick="shareScore()">نسخ النتيجة للمشاركة</button>
+    </div>
+
+    <div id="ui-layer">
+        <div class="score-board">نقاط الانتماء: <span id="score">0</span></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const finalScoreEl = document.getElementById('final-score');
+        const feedbackEl = document.getElementById('feedback-text');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+
+        let animationId;
+        let score = 0;
+        let gameRunning = false;
+        let frame = 0;
+        let items = [];
+
+        const itemTypes = [
+            { emoji: "🗑️", points: 10 },
+            { emoji: "🧃", points: 15 },
+            { emoji: "💧", points: 20 },
+            { emoji: "🧹", points: 5 }
+        ];
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            width: 70,
+            emoji: "👧🏻"
+        };
+
+        let targetX = canvas.width / 2;
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            targetX = e.touches[0].clientX;
+        }, { passive: false });
+
+        canvas.addEventListener('mousemove', (e) => {
+            targetX = e.clientX;
+        });
+
+        function spawn() {
+            if (frame % 40 === 0) {
+                const type = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+                items.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: -50,
+                    speed: 4 + Math.random() * 3,
+                    ...type
+                });
+            }
+        }
+
+        function update() {
+            player.x += (targetX - player.x) * 0.15;
+
+            for (let i = items.length - 1; i >= 0; i--) {
+                items[i].y += items[i].speed;
+
+                // Collision
+                const dx = player.x - items[i].x;
+                const dy = (canvas.height - 100) - items[i].y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist < 50) {
+                    score += items[i].points;
+                    scoreEl.innerText = score;
+                    items.splice(i, 1);
+                } else if (items[i].y > canvas.height) {
+                    items.splice(i, 1);
+                }
+            }
+            frame++;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Player
+            ctx.font = "60px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(player.emoji, player.x, canvas.height - 60);
+
+            // Draw Items
+            ctx.font = "35px Arial";
+            items.forEach(item => {
+                ctx.fillText(item.emoji, item.x, item.y);
+            });
+        }
+
+        function loop() {
+            if (!gameRunning) return;
+            update();
+            draw();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function startGame() {
+            score = 0;
+            frame = 0;
+            items = [];
+            scoreEl.innerText = "0";
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            gameRunning = true;
+            loop();
+            
+            setTimeout(endGame, 30000); // 30 seconds game
+        }
+
+        function endGame() {
+            gameRunning = false;
+            cancelAnimationFrame(animationId);
+            finalScoreEl.innerText = score;
+            
+            if(score > 200) feedbackEl.innerText = "أنتِ بطلة البتراء الحقيقية! فخورون بكِ.";
+            else feedbackEl.innerText = "محاولة رائعة! مدرستنا تناديكِ للمزيد من العطاء.";
+            
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function shareScore() {
+            const text = `حققت ${score} نقطة في تحدي انتماء مدرسة البتراء! 🏫💚`;
+            navigator.clipboard.writeText(text);
+            alert("تم نسخ النتيجة! انشريها الآن في تعليق على صفحة المدرسة.");
+        }
+    </script>
+</body>
+</html>
+
